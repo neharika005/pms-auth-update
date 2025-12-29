@@ -1,3 +1,7 @@
 spring:
   application:
     name: auth
+  security:
+    oauth2:
+      authorizationserver:
+        issuer: http://auth:8080
