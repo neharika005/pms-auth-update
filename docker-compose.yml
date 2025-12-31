@@ -1,6 +1,16 @@
+version: "3.9"
+
 services:
   auth:
     build: .
     container_name: auth
     ports:
-      - "8080:8080"
+      - "8081:8081"
+    environment:
+      - SERVER_PORT=8081
+    networks:
+      - pms-network
+
+networks:
+  pms-network:
+    external: true

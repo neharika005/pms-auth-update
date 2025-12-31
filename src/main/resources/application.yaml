@@ -1,7 +1,15 @@
 spring:
   application:
     name: auth
-  security:
-    oauth2:
-      authorizationserver:
-        issuer: http://auth:8080
+
+server:
+  forward-headers-strategy: none
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
