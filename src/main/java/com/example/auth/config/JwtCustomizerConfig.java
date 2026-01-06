@@ -12,18 +12,14 @@ public class JwtCustomizerConfig {
     @Bean
     public OAuth2TokenCustomizer<JwtEncodingContext> jwtCustomizer() {
         return context -> {
-
-            // 🔹 USER JWT (password / authorization_code)
-            if (!AuthorizationGrantType.CLIENT_CREDENTIALS
-                    .equals(context.getAuthorizationGrantType())) {
-
+            // USER JWT
+            if (AuthorizationGrantType.PASSWORD.equals(context.getAuthorizationGrantType())) {
                 context.getClaims().claim("token_type", "USER");
+                context.getClaims().claim("username", context.getPrincipal().getName());
             }
 
-            // 🔹 SERVICE JWT (client_credentials)
-            if (AuthorizationGrantType.CLIENT_CREDENTIALS
-                    .equals(context.getAuthorizationGrantType())) {
-
+            // SERVICE JWT
+            if (AuthorizationGrantType.CLIENT_CREDENTIALS.equals(context.getAuthorizationGrantType())) {
                 context.getClaims().claim("token_type", "SERVICE");
             }
 
@@ -33,7 +29,6 @@ public class JwtCustomizerConfig {
                         .stream()
                         .map(a -> a.getAuthority())
                         .toList();
-
                 context.getClaims().claim("roles", roles);
             }
         };

@@ -21,16 +21,11 @@ public class JwtConfig {
         return (selector, context) -> selector.select(jwkSet);
     }
 
-//    @Bean
-//    public JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) {
-//        return OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
-//    }
-
     @Bean
     @Primary
     public AuthorizationServerSettings authorizationServerSettings() {
         return AuthorizationServerSettings.builder()
-                .issuer("http://auth:8081")
+                .issuer("http://localhost:8081")
                 .build();
     }
 }

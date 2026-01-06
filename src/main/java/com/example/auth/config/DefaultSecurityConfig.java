@@ -7,15 +7,14 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
-@Order(2)
-public class ActuatorSecurityConfig {
+@Order(3)
+public class DefaultSecurityConfig {
 
     @Bean
-    SecurityFilterChain actuatorFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
         http
-                .securityMatcher("/actuator/**")
-                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
-                .csrf(csrf -> csrf.disable());
+                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                .formLogin();
 
         return http.build();
     }
