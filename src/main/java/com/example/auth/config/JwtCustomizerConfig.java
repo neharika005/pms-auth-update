@@ -13,31 +13,28 @@ public class JwtCustomizerConfig {
     public OAuth2TokenCustomizer<JwtEncodingContext> jwtCustomizer() {
         return context -> {
 
-           
-            if (!context.getPrincipal().getAuthorities().isEmpty()) {
+            // 🔹 USER JWT (password / authorization_code)
+            if (!AuthorizationGrantType.CLIENT_CREDENTIALS
+                    .equals(context.getAuthorizationGrantType())) {
 
+                context.getClaims().claim("token_type", "USER");
+            }
+
+            // 🔹 SERVICE JWT (client_credentials)
+            if (AuthorizationGrantType.CLIENT_CREDENTIALS
+                    .equals(context.getAuthorizationGrantType())) {
+
+                context.getClaims().claim("token_type", "SERVICE");
+            }
+
+            // roles
+            if (!context.getPrincipal().getAuthorities().isEmpty()) {
                 var roles = context.getPrincipal().getAuthorities()
                         .stream()
                         .map(a -> a.getAuthority())
                         .toList();
 
                 context.getClaims().claim("roles", roles);
-                context.getClaims().claim(
-                        "scope",
-                        roles.stream()
-                             .map(r -> r.replace("ROLE_", ""))
-                             .toList()
-                );
-            }
-
-           
-            if (AuthorizationGrantType.CLIENT_CREDENTIALS
-                    .equals(context.getAuthorizationGrantType())) {
-
-                context.getClaims().claim(
-                        "scope",
-                        context.getAuthorizedScopes()
-                );
             }
         };
     }
