@@ -7,7 +7,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
-@Order(2)
+@Order(3)
 public class ActuatorSecurityConfig {
 
     @Bean

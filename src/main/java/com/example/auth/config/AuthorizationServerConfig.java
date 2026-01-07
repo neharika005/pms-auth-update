@@ -33,24 +33,35 @@ import com.nimbusds.jose.proc.SecurityContext;
 
 @Configuration
 public class AuthorizationServerConfig {
-
-    /**
-     * Chain 1: Handles OAuth2 Protocol (Service-to-Service JWTs)
-     */
     @Bean
     @Order(1)
     public SecurityFilterChain authSecurityFilterChain(HttpSecurity http) throws Exception {
-        OAuth2AuthorizationServerConfigurer authorizationServerConfigurer = 
-                new OAuth2AuthorizationServerConfigurer();
-        
+        OAuth2AuthorizationServerConfigurer authorizationServerConfigurer = new OAuth2AuthorizationServerConfigurer();
+
         http.securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
-            .with(authorizationServerConfigurer, (configurer) -> 
-                configurer.oidc(Customizer.withDefaults())
-            )
-            .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
-            .csrf(csrf -> csrf.disable());
+                .with(authorizationServerConfigurer, (configurer) -> configurer.oidc(Customizer.withDefaults()))
+                // 1. THIS IS THE KEY: It allows the script to authenticate
+                .httpBasic(Customizer.withDefaults())
+                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                .csrf(csrf -> csrf.disable());
 
         return http.build();
+    }
+
+    @Bean
+    public RegisteredClientRepository registeredClientRepository(PasswordEncoder passwordEncoder) {
+        // 2. THIS ENSURES THE BCRYPT MATCH: No more manual hashing
+        String encodedSecret = passwordEncoder.encode("service-secret");
+
+        RegisteredClient serviceClient = RegisteredClient.withId(UUID.randomUUID().toString())
+                .clientId("service-client")
+                .clientSecret(encodedSecret)
+                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .scope("service.read")
+                .build();
+
+        return new InMemoryRegisteredClientRepository(serviceClient);
     }
 
     /**
@@ -60,12 +71,11 @@ public class AuthorizationServerConfig {
     @Order(2)
     public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
         http
-            .securityMatcher("/api/auth/**", "/error")
-            .authorizeHttpRequests(authorize -> authorize
-                .requestMatchers("/api/auth/signup", "/api/auth/login").permitAll()
-                .anyRequest().authenticated()
-            )
-            .csrf(csrf -> csrf.disable());
+                .securityMatcher("/api/auth/**", "/error")
+                .authorizeHttpRequests(authorize -> authorize
+                        .requestMatchers("/api/auth/signup", "/api/auth/login").permitAll()
+                        .anyRequest().authenticated())
+                .csrf(csrf -> csrf.disable());
 
         return http.build();
     }
@@ -78,18 +88,6 @@ public class AuthorizationServerConfig {
     @Bean
     public JwtEncoder jwtEncoder(JWKSource<SecurityContext> jwkSource) {
         return new NimbusJwtEncoder(jwkSource);
-    }
-
-    @Bean
-    public RegisteredClientRepository registeredClientRepository() {
-        RegisteredClient serviceClient = RegisteredClient.withId(UUID.randomUUID().toString())
-                .clientId("service-client")
-                .clientSecret("{noop}service-secret")
-                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
-                .scope("service.read")
-                .build();
-        return new InMemoryRegisteredClientRepository(serviceClient);
     }
 
     @Bean
