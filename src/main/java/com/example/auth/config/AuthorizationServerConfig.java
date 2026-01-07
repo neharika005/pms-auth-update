@@ -1,92 +1,98 @@
 package com.example.auth.config;
 
-import com.nimbusds.jose.jwk.JWKSet;
-import com.nimbusds.jose.jwk.RSAKey;
-import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
-import com.nimbusds.jose.jwk.source.JWKSource;
-import com.nimbusds.jose.proc.SecurityContext;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
+import java.security.interfaces.RSAPrivateKey;
+import java.security.interfaces.RSAPublicKey;
+import java.util.UUID;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.annotation.Order;
-import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.core.annotation.Order; // Ensure this is imported
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.provisioning.InMemoryUserDetailsManager;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
-import org.springframework.security.oauth2.server.authorization.InMemoryOAuth2AuthorizationService;
-import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.client.InMemoryRegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
-import org.springframework.security.oauth2.server.authorization.token.DelegatingOAuth2TokenGenerator;
-import org.springframework.security.oauth2.server.authorization.token.JwtGenerator;
-import org.springframework.security.oauth2.server.authorization.token.OAuth2AccessTokenGenerator;
-import org.springframework.security.oauth2.server.authorization.token.OAuth2RefreshTokenGenerator;
-import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenGenerator;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.interfaces.RSAPrivateKey;
-import java.security.interfaces.RSAPublicKey;
-import java.util.UUID;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
+import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.proc.SecurityContext;
 
 @Configuration
 public class AuthorizationServerConfig {
 
+    /**
+     * Chain 1: Handles OAuth2 Protocol (Service-to-Service JWTs)
+     */
     @Bean
     @Order(1)
-    public SecurityFilterChain authSecurityFilterChain(
-            HttpSecurity http,
-            AuthenticationManager authenticationManager,
-            OAuth2TokenGenerator<?> tokenGenerator,
-            OAuth2AuthorizationService authorizationService) throws Exception {
-
+    public SecurityFilterChain authSecurityFilterChain(HttpSecurity http) throws Exception {
         OAuth2AuthorizationServerConfigurer authorizationServerConfigurer = 
                 new OAuth2AuthorizationServerConfigurer();
         
-        http.securityMatcher(authorizationServerConfigurer.getEndpointsMatcher());
-
-        http.with(authorizationServerConfigurer, (configurer) -> {
-            configurer.tokenEndpoint(tokenEndpoint -> tokenEndpoint
-                .accessTokenRequestConverter(new PasswordGrantAuthenticationConverter())
-                .authenticationProvider(new PasswordGrantAuthenticationProvider(
-                        authenticationManager, tokenGenerator, authorizationService))
-            );
-            configurer.oidc(Customizer.withDefaults());
-        });
-
-        http.exceptionHandling(exceptions -> exceptions
-            .authenticationEntryPoint(new LoginUrlAuthenticationEntryPoint("/login"))
-        );
-
-        http.csrf(csrf -> csrf.disable());
+        http.securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
+            .with(authorizationServerConfigurer, (configurer) -> 
+                configurer.oidc(Customizer.withDefaults())
+            )
+            .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+            .csrf(csrf -> csrf.disable());
 
         return http.build();
     }
 
-    // --- NEW: THE MISSING TOKEN GENERATOR BEAN ---
+    /**
+     * Chain 2: Handles Application Endpoints (Signup, Login)
+     */
     @Bean
-    public OAuth2TokenGenerator<?> tokenGenerator(JWKSource<SecurityContext> jwkSource) {
-        JwtEncoder jwtEncoder = new NimbusJwtEncoder(jwkSource);
-        JwtGenerator jwtGenerator = new JwtGenerator(jwtEncoder);
-        OAuth2AccessTokenGenerator accessTokenGenerator = new OAuth2AccessTokenGenerator();
-        OAuth2RefreshTokenGenerator refreshTokenGenerator = new OAuth2RefreshTokenGenerator();
-        return new DelegatingOAuth2TokenGenerator(
-                jwtGenerator, accessTokenGenerator, refreshTokenGenerator);
+    @Order(2)
+    public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .securityMatcher("/api/auth/**", "/error")
+            .authorizeHttpRequests(authorize -> authorize
+                .requestMatchers("/api/auth/signup", "/api/auth/login").permitAll()
+                .anyRequest().authenticated()
+            )
+            .csrf(csrf -> csrf.disable());
+
+        return http.build();
     }
 
-    // --- JWT SIGNING INFRASTRUCTURE ---
-    @Bean 
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public JwtEncoder jwtEncoder(JWKSource<SecurityContext> jwkSource) {
+        return new NimbusJwtEncoder(jwkSource);
+    }
+
+    @Bean
+    public RegisteredClientRepository registeredClientRepository() {
+        RegisteredClient serviceClient = RegisteredClient.withId(UUID.randomUUID().toString())
+                .clientId("service-client")
+                .clientSecret("{noop}service-secret")
+                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .scope("service.read")
+                .build();
+        return new InMemoryRegisteredClientRepository(serviceClient);
+    }
+
+    @Bean
     public JWKSource<SecurityContext> jwkSource() {
         KeyPair keyPair = generateRsaKey();
         RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
@@ -95,53 +101,21 @@ public class AuthorizationServerConfig {
                 .privateKey(privateKey)
                 .keyID(UUID.randomUUID().toString())
                 .build();
-        JWKSet jwkSet = new JWKSet(rsaKey);
-        return new ImmutableJWKSet<>(jwkSet);
+        return new ImmutableJWKSet<>(new JWKSet(rsaKey));
     }
 
-    private static KeyPair generateRsaKey() { 
-        KeyPair keyPair;
+    private static KeyPair generateRsaKey() {
         try {
             KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
             keyPairGenerator.initialize(2048);
-            keyPair = keyPairGenerator.generateKeyPair();
-        } catch (Exception ex) {
+            return keyPairGenerator.generateKeyPair();
+        } catch (NoSuchAlgorithmException ex) { // Fixed specific exception hint
             throw new IllegalStateException(ex);
         }
-        return keyPair;
-    }
-
-   @Bean
-public AuthorizationServerSettings authorizationServerSettings() {
-    return AuthorizationServerSettings.builder()
-            .issuer("http://auth:8081") // Force the issuer to use the service name
-            .build();
-}
-    // --- DATA BEANS ---
-    @Bean
-    public RegisteredClientRepository registeredClientRepository() {
-        RegisteredClient client = RegisteredClient.withId(UUID.randomUUID().toString())
-                .clientId("test-client")
-                .clientSecret("{noop}test-secret")
-                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-                .authorizationGrantType(AuthorizationGrantType.PASSWORD)
-                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                .scope("openid")
-                .build();
-        return new InMemoryRegisteredClientRepository(client);
     }
 
     @Bean
-    public UserDetailsService userDetailsService() {
-        UserDetails user = User.withUsername("test-user")
-                .password("{noop}test-password")
-                .roles("USER")
-                .build();
-        return new InMemoryUserDetailsManager(user);
-    }
-
-    @Bean
-    public OAuth2AuthorizationService authorizationService() {
-        return new InMemoryOAuth2AuthorizationService();
+    public AuthorizationServerSettings authorizationServerSettings() {
+        return AuthorizationServerSettings.builder().issuer("http://auth:8081").build();
     }
 }
